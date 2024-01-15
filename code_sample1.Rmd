@@ -1,0 +1,167 @@
+---
+title: "Acumen Coding Sample"
+author: "Joshua Susanto"
+date: "2023-12-30"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+Hello! Thank you for taking the time to review my coding sample. I've tried to exemplify my skills in statistics and data analysis in a concise and informative way. I hope you enjoy what my programming has to offer!
+
+## Data Visualization: Bias Variance Trade-off
+
+The first piece of code I'd like to share is a visualization. I know how important visualization is within the realm of data analysis, and it especially is useful to convey information to those not well versed in the subject. Hence, making it a great skill for working with clients and consulting. What I want to share is a visualization of the **bias variance trade-off**! It's an essential concept in the realm of model building and machine learning as it is extremely useful to understand how model flexibility interacts with its reproducibility and computation speed.
+
+```{r}
+# set seed for reproducibility
+set.seed(405568250)
+```
+
+In our example we will try to model the function:
+
+$$y = sin(x) + cos(x)$$
+To do so we will first generate 50000 random testing samples uniformly across the support of our function (which is [-2$\pi$,2$\pi$]). 
+
+```{r}
+# generate testing samples
+xtesting = runif(50000, -2*pi, 2*pi)
+ytesting = sin(xtesting) + cos(xtesting)
+
+# for storage
+ypredict = matrix(0, 7, 50000)
+ypredict.sq = matrix(0, 7, 50000)
+```
+
+We then will generate 30 training samples the same way for both our predictor (x) and target (y). To model real world variation in our data we will add a terms epsilon, a normally distributed variable that follows $N(0,0.5)$ which represents the inherit imperfection in real data. With this data we then will run a series of 7 polynomial regression models, each with increasing degrees. This will then be repeated 1000 times in order to calculate our expected predictions.
+
+```{r}
+# generate training data
+for (i in 1:1000) {
+  xtraining = runif(30, -2*pi, 2*pi)
+  ytraining = sin(xtraining) + cos(xtraining) + rnorm(30, 0, 0.5) # epsilon (noise)
+
+  for (d in 1:7) { # d is amount of predictors
+    # fitting model
+    fitted_model = lm(ytraining ~ poly(xtraining, degree = d, raw = TRUE, simple = TRUE))
+    # calculate predicted for the testing samples
+    pred = fitted_model$coefficients[1] + poly(xtesting, degree = d, raw = TRUE, simple = TRUE) %*% fitted_model$coefficients[2:(d+1)]
+    # store our predicted y values
+    ypredict[d, ] = ypredict[d, ] + pred
+    ypredict.sq[d, ] = ypredict.sq[d, ] + pred^2
+  }
+}
+
+# calculate expected prediction
+ypredict = ypredict/1000 
+ypredict.sq = ypredict.sq/1000
+```
+
+Now that we have our expected values, we can calculate the squared bias and variance for each polynomial degree d. Note that this simulation is not practical to use with real data, as we hardly will ever have the means to this much information on our target variables. It's merely an exercise to observe the intricacies that come into play when we do model real world data!
+
+```{r}
+square.bias = rep(0, 7)
+variance = rep(0, 7)
+for (d in 1:7){
+  square.bias[d] = mean((ypredict[d, ] - ytesting)^2)
+  variance[d] = mean(ypredict.sq[d, ] - ypredict[d, ]^2)
+}
+
+matplot(cbind(square.bias, variance), type = "b", col = c('red', 'blue'), pch = 1, lty = 1,
+  xlab = "Predictors", ylab = "Value",
+  main = "Bias-Variance Trade-off")
+legend("topleft", legend = c("Squared Bias", "Variance"), lty = 1, col = c('red', 'blue'))
+```
+
+We can see that the ideal trade-off point occurs within the intersection of our bias and variance, meaning that having a polynomial model with 4 degrees will yield a reproducible model while not overfitting our own observed data.
+
+## Function Writing: K-Nearest Neighbors
+
+Function writing is an essential skill for programmers. While many applied statistical programming relies on the use of various functions, being well-versed in function writing ensures a sharp analytical mind! Sometimes there won't be functions for all one's needs, in this case being seasoned and practiced in function writing and problem solving are essential for an effective programmer.
+
+In my sample I've decided to write a function for the K-Nearest Neighbors algorithm. This is a common supervised machine learning model that essentially clusters data by taking its K nearest neighbors (quite self explanatory but can be computationally expensive in practice). In my function I am going to assume 2 dimensional feature data and hence use euclidean distance as our measure of "nearest". This can be very easily altered. My function will require arguments for both training data and testing data and return the Mean Squared Error of our predictions.
+
+The first step I took is to define a helper function `dist_func` to serve as our means of measuring euclidean distance.
+
+```{r}
+# measure euclidean distance
+dist_func = function(a, b){
+  return(sqrt(sum((a - b)^2)))
+}
+```
+
+Looking at every testing sample our function first initializes a vector `distances` to store all of the distances between every training data point and our target sample. Utilizing `dist_func`, we then take these distances and observe the k (a tuneable parameter) nearest data points. We then take the average target label (what we want to predict) of these neighbors and have this average as our prediction for our testing point. We then compute the Mean Square Error with our actual labels in order to diagnose our model's accuracy.
+
+```{r}
+knn = function(train, test, k = 3) {
+  # Create an empty vector to store the MSE for each testing sample
+  mse_vector = numeric(nrow(test))
+  
+  # KNN Algorithm
+  for (i in 1:nrow(test)) {
+    # current sample
+    test_sample = test[i,1:2]
+    
+    # we can calculate the distance between our sample with every other data point and store it     in distances
+    distances = numeric(nrow(train))
+    for (j in 1:nrow(train)) {
+      distances[j] = dist_func(test_sample, train[j, 1:2])
+    }
+    
+    # find the K-nearest neighbors 
+    indices = order(distances)[1:k]
+    # average of their labels as the prediction
+    mse_vector[i] = mean(train[indices, 3])
+  }
+  mse = mean((mse_vector - test[,3])^2)
+  return(mse)
+}
+```
+
+Now that we've written our function we can test it out! I don't want to use external data as I'd have to attach a file for it and it could be a hassle for you so we can simply model the function:
+
+$$f(x_1,x_2) = x_1^2+x_2^2+x_1^3+x_2^3$$
+We'll model this function for $x\in[1,2]$ and drawing random uniform values for our predictors $x_1$ and $x_2$. Our labels ($y$) will be simulated by adding a term epsilon such that it follows $N(0,0.1)$
+
+```{r}
+# set seed for reproducibility
+set.seed(123)
+
+# generate training data
+x1_train = runif(600, 1, 2)
+x2_train = runif(600, 1, 2)
+y_train = x1_train^2 + x2_train^2 + x1_train^3 + x2_train^3 + rnorm(600, 0, 0.1)
+train = cbind(x1_train, x2_train, y_train)
+
+# generate testing data
+x1_test = runif(200, 1, 2)
+x2_test = runif(200, 1, 2)
+y_test = x1_test^2 + x2_test^2 + x1_test^3 + x2_test^3 + rnorm(200, 0, 0.1)
+test = cbind(x1_test, x2_test, y_test)
+```
+
+Finally, we can test out our function. We'll try various values of k, starting from 1 up to 21 (only taking the odd values). We will then plot our testing error (or MSE) and observe the relationship between varying values of k and model performance.
+
+```{r}
+# initialize k and vector for testing error
+k = seq(1, 21, by = 2)
+test_error = numeric(length(k))
+
+# obtaining and storing testing errors
+for (i in 1:length(k)) {
+  test_error[i] = knn(train, test, k[i])
+}
+
+# printing our accuracies and visualization
+print(1 - test_error)
+plot(k, test_error, type = 'l', main = 'Testing MSE for Values of K', ylab = 'Testing MSE')
+```
+
+We observe fairly high accuracies across the board, meaning that KNN was a good model choice and worked well. In terms of the accuracy behavior, we see that it is minimized when k = 7, making this our optimal k. A k too small won't capture enough data to make a good prediction while a k too large overfits and does not model the finer details needed to effectively predict as well.
+
+I hope that this coding sample was informative or at the very least interesting to read! I believe I was able to showcase a bit of my knowledge and skills in the realm of statistical programming and data science. Thank you for your consideration! Please feel free to reach out for anything, I'm definitely capable of showing much more :)
