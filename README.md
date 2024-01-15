@@ -2,12 +2,12 @@
 
 These are my personal works or one-off projects I've contributed to or led. Descriptions for all projects as a directory are listed below. Please reachout if you have any concerns, I'd love to discuss my work with others!
 
-1. [Incomplete] Airbnb Listings Analysis
+**1. [Incomplete] Airbnb Listings Analysis**
   - AB_NYC_2019.csv
   - airbnb-notebook.ipynb
     
 
-2. Predicting Movie Reviews with Classification Learning Models
+**2. Predicting Movie Reviews with Classification Learning Models**
    
 A project that takes 50,000 IMDb movie reviews and uses various machine learning models to predict the review sentiment. I conducted in-depth analysis on a diverse set of 50,000 IMDb movie reviews, employing advanced NLP techniques
 for accurate sentiment prediction. I aimed to highlight two different methods in creating a feature dictionary: one utilizing term frequency-inverse document frequency and another using an outside resource in the form of a preset sentiment lexicon dictionary. With these two foundations I systematically compared and contrasted the efficacy of multiple machine learning models on the data, including Logistic Regression, Linear Discriminant Analysis (LDA), Quadratic Discriminant Analysis (QDA), and K Nearest Neighbors (KNN). Multiple different machine learning techniques were implemented to explore and highlight their strenghts, weaknesses, and their most useful scenarios. Doing so allowed me to demonstrate my knowledge of these techniques and proficiency in model selection. Additionally, I rigorously evaluated model performance through comprehensive classification reports and computation time analyses, highlighting a results-oriented approach and commitment to delivering impactful insights.
@@ -17,7 +17,7 @@ for accurate sentiment prediction. I aimed to highlight two different methods in
   - imdb-reviews.ipynb
 
 
-3. Analyzing System Inefficiencies Within Client Inquiries [ASA DataFest 2023]
+**3. Analyzing System Inefficiencies Within Client Inquiries [ASA DataFest 2023]**
 
 In this project I led a team in analyzing a large dataset from the American Bar Association (ABA) with the objective of identifying systematic inefficiencies in request processing. Due to privacy reasons, no code nor data can be pubicly accessed, but I'm happy to highlight my processes and contributions. I am only allowed to share the final concise slides used to present our findings to a panel of judge. While doing exploratory analysis I initially noticed large discrepancies in processing times, I was able to successfully identified key bottlenecks in the organization’s request processing, leading to actionable recommendations for improving efficiency. This was done by employing Non-negative Matrix Factorization (NMF) and other NLP tools to uncover patterns and latent features in the dataset, contributing to a deeper understanding of underlying structures. 
 
