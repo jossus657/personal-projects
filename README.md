@@ -15,6 +15,8 @@ for accurate sentiment prediction. I aimed to highlight two different methods in
 **Contains:**
 
   - imdb-reviews.ipynb
+  - positive-words.txt (https://www.kaggle.com/datasets/nltkdata/opinion-lexicon)
+  - negative-words.txt (https://www.kaggle.com/datasets/nltkdata/opinion-lexicon)
 
 
 **3. Analyzing System Inefficiencies Within Client Inquiries [ASA DataFest 2023]**
@@ -24,5 +26,14 @@ In this project I led a team in analyzing a large dataset from the American Bar 
 **Contains:**
 
 - C10Boolean_Busters.pdf
+
+
+**4. Other Coding Samples**
+
+
+
+**Contains:**
+
+- code_sample1.rmd
 
 
