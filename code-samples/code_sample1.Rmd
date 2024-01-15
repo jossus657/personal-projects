@@ -1,5 +1,5 @@
 ---
-title: "Acumen Coding Sample"
+title: "Coding Sample"
 author: "Joshua Susanto"
 date: "2023-12-30"
 output:
