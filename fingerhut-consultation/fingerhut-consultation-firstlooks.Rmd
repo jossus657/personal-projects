@@ -1,0 +1,256 @@
+---
+title: "FingerHut Exploratory Data Analysis"
+author: "Joshua Susanto"
+date: "2024-01-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r}
+# read data
+fh_data <- read_csv('export.csv')
+
+# view data
+fh_data
+```
+
+```{r}
+# view column information and types
+str(fh_data)
+
+# convert necessary variables into factors
+fh_data <- fh_data %>%
+  mutate_at(c('customer_id', 'account_id', 'ed_id', 'event_name'), as.factor)
+
+# summary statistics
+summary(fh_data)
+```
+
+## Data Cleaning/Preprocessing
+
+What can we do to make this data easier to work with? It's quite long so maybe incorporating some sort of width can help. It seems that there are very strange journeys with extremely long durations. We were informed that system errors may occur and cause duplicate steps. We can easily remove these duplicates by observing which data points have identical events and timestamps:
+
+```{r}
+#unique_index <- fh_data %>% select(!journey_steps_until_end) %>% duplicated()
+```
+
+
+## Preliminary Questions
+
+- why are some entries same time and event?
+- journey_steps_until_end is interesting, try to take a closer look
+- explore customer behavior, why are some journeys not being completed? where are they stopping? can incorporate time into this
+
+### Quick Look: Account vs. Customers
+
+```{r}
+length(unique(fh_data$account_id))
+length(unique(fh_data$customer_id))
+```
+
+Seems to be a discrepancy between accounts and customer uniqueness. A few customers have multiple accounts and a few accounts have multiple people attached to them.
+
+## Event Name
+
+```{r}
+unique(fh_data$event_name)
+```
+
+There are 28 unique events that can happen. We consider a completed journey to end with 'order_shipped'.
+
+```{r}
+# filter data by completed journey
+order_placed <- fh_data[fh_data$event_name == 'order_shipped',]
+length(unique(order_placed$customer_id))
+```
+
+There are 320686 instances of an order being shipped, but how does this compare to the total amount of journeys that are present? Are we witnessing a high percentage of successful journeys? To more closely observe the journey ending steps, we can easily work backwards from the first step of each new journey.
+
+```{r}
+# find new journeys, step 1
+new_journey_index <- which(fh_data$journey_steps_until_end == 1)[-1]
+
+# the end of the previous journey should be the observation directly prior
+end_journey_index <- new_journey_index - 1
+
+# adjust as needed
+end_journey_index <- append(end_journey_index, length(fh_data$customer_id))
+```
+
+Now that we have the indices of our journey ending steps, we can easily filter our data and explore what is causing the end of our journeys. 
+
+```{r}
+# filter with our journey end index
+end_journey_data <- fh_data[end_journey_index,]
+```
+
+```{r}
+# table of which events journey's are ending with
+table(end_journey_data$event_name) %>% as.data.frame() %>% arrange(by_group = desc(Freq))
+
+# barplot to visualize
+end_journey_data %>%
+  select(event_name) %>%
+  table %>%
+  as.data.frame() %>%
+  ggplot(aes(x = reorder(event_name, +Freq), y = Freq)) +
+  geom_bar(stat = "identity", fill="#f68060", alpha = 0.6, width = 0.4) +
+  coord_flip() +
+  xlab("") +
+  theme_bw()
+```
+
+```{r}
+# compared to a table of events in general
+table(fh_data$event_name) %>% as.data.frame() %>% arrange(by_group = desc(Freq))
+
+# barplot to visualize
+fh_data %>%
+  select(event_name) %>%
+  table %>%
+  as.data.frame() %>%
+  ggplot(aes(x = reorder(event_name, +Freq), y = Freq)) +
+  geom_bar(stat = "identity", fill="#d63532", alpha = 0.6, width = 0.4) +
+  coord_flip() +
+  xlab("") +
+  theme_bw()
+```
+The ‘journey_steps_until_end’ variable indicates how many actions a customer took before their order was successfully shipped. In other words, it counts the number of events that occur before the customer’s purchase journey is fully complete.
+
+We can explore this variable with more clarity by observing how many steps a customer takes
+before their journey ends (or the final ‘journey_steps_until_end’ for each unique journey.)
+Observing these descriptive statistics we find:
+
+```{r}
+summary(end_journey_data$journey_steps_until_end)
+
+end_journey_data %>% arrange(by_group = desc(journey_steps_until_end))
+```
+
+```{r}
+hist(end_journey_data$journey_steps_until_end)
+```
+
+```{r}
+end_journey_data %>% arrange(by_group = desc(journey_steps_until_end)) %>% filter(journey_steps_until_end < 1000)
+```
+
+```{r}
+end_journey_data %>% arrange(by_group = desc(journey_steps_until_end)) %>% filter(journey_steps_until_end < 400)
+```
+
+We see that we clearly have some very large outliers in our data, with exactly 80 of our 1735767 observations having 1000+ steps. A common way to identify outliers is to use z-score standardization and identify points whose scores are +/-3 from 0. Taking this into consideration we find that there are 29,880 journeys considered outliers, with all of them having z-score +3 and none being -3 from 0. Removing these observations from consideration our distribution now becomes much more reasonable:
+
+```{r}
+end_journey_data$zscore <- (end_journey_data$journey_steps_until_end - mean(end_journey_data$journey_steps_until_end))/(sd(end_journey_data$journey_steps_until_end))
+
+
+end_journey_data %>% arrange(by_group = desc(zscore)) %>% filter(zscore >= 3)
+
+end_journey_data %>% arrange(by_group = desc(zscore)) %>% filter(zscore <= -3)
+```
+
+```{r}
+end_journey_clean <- end_journey_data %>% arrange(by_group = desc(zscore)) %>% filter(zscore <= 3)
+summary(end_journey_clean$journey_steps_until_end)
+```
+
+```{r}
+hist(end_journey_clean$journey_steps_until_end, main = 'Total Steps Taken to End a Journey', xlab = 'Steps')
+```
+
+```{r}
+table(end_journey_clean$event_name) %>% as.data.frame() %>% arrange(by_group = desc(Freq))
+
+end_journey_clean %>%
+  select(event_name) %>%
+  table %>%
+  as.data.frame() %>%
+  ggplot(aes(x = reorder(event_name, +Freq), y = Freq)) +
+  geom_bar(stat = "identity", fill="#392345", alpha = 0.6, width = 0.4) +
+  coord_flip() +
+  xlab("") +
+  theme_bw()
+```
+
+## Clean Data
+
+### Remove outliers
+
+Working backwards from finding our ending journey steps, we can attempt to remove any outliers from our data. The current limit is a 167 step journey; we will remove any journey that has surpassed this limit.
+
+```{r}
+# find new journeys, step 1
+new_journey_index <- which(fh_data$journey_steps_until_end == 1)[-1]
+
+# the end of the previous journey should be the observation directly prior
+end_journey_index <- new_journey_index - 1
+
+# adjust as needed
+end_journey_index <- append(end_journey_index, length(fh_data$customer_id))
+
+# outlier index
+outlier_index <- end_journey_index[which(end_journey_data$journey_steps_until_end >= 167)]
+sum(fh_data$journey_steps_until_end[outlier_index] >= 167) == length(outlier_index) # TRUE -> right track
+
+# initialize joutlier_journey_index, indices for removal
+outlier_journey_index <- c()
+
+# find all journey indices to remove
+for (i in outlier_index) {
+  journey <- seq(i - as.numeric(fh_data[i, 'journey_steps_until_end']) + 1, i)
+  outlier_journey_index <- append(outlier_journey_index, journey)
+}
+
+# remove outlier_journey_index
+fh_clean <- fh_data[-(outlier_journey_index),]
+
+# export data
+```
+
+This processed removed around 1.7 million observations from out dataset, which is around 11.63% of our observations. Hopefully, this removal gives us a more clear picture of our journeys and allows us to better visualize customer behavior.
+
+### Pre-Analysis: Probability Matrix
+
+The obvious glaring aspect of our data is the ability to track a customer's journey and model their behavior. A good first step in analysis is to create a probability matrix that gives us any event's probability to jumping to another one. This can be useful for modeling and other bayesian/statistical analyses. 
+
+```{r}
+# vector of unique events
+events <- unique(fh_clean$event_name)
+
+# initialize probability matrix
+prob_matrix <- matrix(0, nrow = length(events), ncol = length(events))
+
+# create row and column names for probability matrix
+dimnames(prob_matrix) <- list(events, events)
+
+# loop through all journeys, tallying event transitions
+for (i in 1:(dim(fh_clean)[1]-1)) {
+  # checking if the observation is the last step of a journey
+  if (fh_clean$journey_steps_until_end[i+1] == 1) {
+    # pass onto next iteration
+    next
+  } else {
+    # store the current and next event
+    current_event <- fh_clean$event_name[i]
+    next_event <- fh_clean$event_name[i+1]
+    
+    # update tally
+    prob_matrix[current_event, next_event] <- prob_matrix[current_event, next_event] + 1
+  }
+}
+
+# convert counts to probabilities
+row_sums <- rowSums(prob_matrix)
+prob_matrix <- prob_matrix/row_sums
+
+# display
+print(prob_matrix)
+```
+
+
+
