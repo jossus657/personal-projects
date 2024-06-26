@@ -1,0 +1,186 @@
+---
+title: "LA Apparel Technical Interview - R"
+author: "Joshua Susanto"
+date: "2024-06-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+File titled Theoretical Lot Audits - Assessment contains data regarding a theoretical audit of fabric inventory. Since admin staff are unable to export adjustments from the fabrics system, they export the following information from our fabrics system and maintain a spreadsheet of adjustments. The following information is exported from the fabrics system:
+
+Lot#
+Date
+Style#
+Desc#
+Color#
+Received Pcs
+Stock Pcs
+
+Warehouse staff inform administrative staff of the number of pcs in inventory for each lot at the warehouse. When the administrative staff update the system, they update columns A, B and J.
+ 
+When admin staff update each record, they update column A with the date the fabric system is updated and admin staff record their own names in column B. The admin staff then enter adjustments in column J which are the difference between initial stock pcs previously recorded in the fabric system and final count of pcs warehouse staff count in the warehouse. Received pcs is the amount of units in the lot when the company initially receives each lot. If warehouse staff discover lots which are not currently in the fabric system, then the admin staff will add the required info to the system and a new row to the bottom of the dataset.
+
+```{r}
+# import tidyverse
+library(tidyverse)
+```
+
+## 1. What are your observations about this data set? Please include observations regarding:
+
+```{r}
+# load dataset
+fabrics <-suppressWarnings( readxl::read_excel("theoretical_lot_audits.xlsx"))
+
+# first looks
+head(fabrics)
+str(fabrics)
+summary(fabrics)
+
+# missing values
+missing_values <- colSums(is.na(fabrics))
+print(missing_values)
+```
+
+We seem to have many missing values, we know that the system date and user are going to be filled out for audited logs. There seems to be other missing information, for logs that are audited but have missing adjusted pieces, a fair assumption would be that there was no adjustment.
+
+Additionally, received pieces and initial stock pieces should more or less remain consistent across logs according to the information given. Taking a closer look:
+
+```{r}
+# filtering data for any instances where we received or expect differently than our initial count
+fabrics %>% filter(`Received Pcs` != `Initial Stock Pcs`)
+```
+
+There are only 5 cases in which this holds true, and in all cases we counted more than we received. Not sure if this is a log error, but with only 0.0018% of cases facing this discrepency, it doesn't seem like a huge issue.
+
+### Total # Unique Lots
+
+```{r}
+# pipeline: from fabrics, select Lot#, drop missing values, and find how many unique values
+fabrics %>% 
+  select(`Lot#`) %>% 
+  drop_na() %>% 
+  n_distinct()
+```
+
+Using a dplyr pipeline we can easily find that there are 2562 unique lots, not accounting for missing values. Finding those that are audited, we need to find logs where a system date and user are recorded. 
+
+### Unique Lots Audited (# & %)
+
+```{r}
+# pipeline: from fabrics, filter when either date or user is not missing, select Lot#, drop missing values, and find how many unique values
+fabrics %>% 
+  filter(!is.na(`System Entry Date`) | !is.na(`System User`)) %>% 
+  select(`Lot#`) %>% 
+  drop_na() %>% 
+  n_distinct()
+```
+
+By using an "or" operator we can see that there are 2462 different audited lots, or 91.389% of total unique lots.
+
+```{r}
+# pipeline: from fabrics, filter when both date and user is missing, select Lot#, drop missing values, and find how many unique values
+fabrics %>% 
+  filter(!is.na(`System Entry Date`) & !is.na(`System User`)) %>% 
+  select(`Lot#`) %>% 
+  drop_na() %>% 
+  n_distinct()
+```
+
+However by using an "and" operator we get 2461, which means that there is exactly 1 instance where a user input their name but not the date. Since both date and user must be manually inputted, it makes more sense to consider the "or" operator as the correct scenario. 
+
+### Unique Lots Remaining to be Audited (# & %)
+
+```{r}
+fabrics %>% 
+  filter(is.na(`System Entry Date`) & is.na(`System User`)) %>% 
+  select(`Lot#`) %>% 
+  drop_na() %>% 
+  n_distinct()
+
+fabrics %>%
+  filter(is.na(`System Entry Date`)) %>% 
+  filter(!is.na(`Lot#`))
+```
+
+From our previous observation we know that this case must have both the system entry data as well as the system user be missing. We end up with 100 unique lots where these two entries are missing, or 3.712% of our lots needing to be audited.
+
+### Total Adjustments (pcs) (# & %) any other relevant insights
+
+```{r}
+# first look: summary statistics of adjusted pieces
+fabrics %>% 
+  select(`Adjusted #Pcs`) %>%
+  summary()
+
+# a frequency table for distribution
+adjustment_table <- table(fabrics$`Adjusted #Pcs`)
+print(adjustment_table)
+
+# gives us a quick glance on how many non-missing values are in adjusted pieces
+sum(adjustment_table)
+```
+
+```{r}
+# histogram of adjusted pieces to visualize this distribution
+ggplot(fabrics, aes(x = `Adjusted #Pcs`)) + 
+  geom_histogram(binwidth = 0.1, fill = "green", color = "darkgreen") + 
+  labs(title = "Customized Histogram of Adjusted Pieces", x = "Adjusted Pieces", y = "Frequency") +
+  theme_minimal()
+
+```
+
+Upon first looks we can see that a majority of adjustment logs turn out to be 0, meaning inventory has not changed. This distribution is overwhelmingly skewed toward 0, with 2035 out of 2449 non-missing adjustment logs being 0, or around 83%
+
+Digging deeper a few questions about the dataset arise:
+
+1. Can there be non audits with adjustments?
+
+```{r}
+fabrics %>% 
+  filter(is.na(`System Entry Date`) & is.na(`System User`) & !is.na(`Adjusted #Pcs`))
+```
+It seems that our assumption holds true; adjustments are made when an audit log is made. There is a singular case that differs, but this could either be a system error or a manual log error.
+
+2. Can there be missing adjustment with an audit? What does this mean?
+
+```{r}
+fabrics %>% 
+  filter((!is.na(`System Entry Date`) | !is.na(`System User`)) & is.na(`Adjusted #Pcs`))
+```
+
+It appears as though there are cases of audited logs containing missing adjustments, though few and far in between, fortunately For the sake of thoroughness and simplicity, we will assume that these lots are still considered audited and that these missing values mean no adjustments made (0). Realistically, this is also probably due to either a system or manual log error.
+
+Now with these questions addressed we have no issues finding our adjustment totals and insights:
+
+```{r}
+adjusted_audits <- fabrics %>%
+  filter((!is.na(`System Entry Date`) | !is.na(`System User`)) & `Adjusted #Pcs` != 0 ) 
+
+dim(adjusted_audits)
+```
+
+We find that 414 of our audits have nonzero adjustments, meaning that around 8.7% of audited logs see some sort of adjustments.
+
+```{r}
+negative_adjust <- adjusted_audits %>% 
+  filter(`Adjusted #Pcs` < 0) %>% 
+  select(`Adjusted #Pcs`) 
+
+positive_adjust <- adjusted_audits %>% 
+  filter(`Adjusted #Pcs` > 0) %>% 
+  select(`Adjusted #Pcs`)
+
+paste('There are', dim(negative_adjust)[1], 'logs with negative adjustments.') 
+paste('A total of', abs(sum(negative_adjust)), 'pieces have been removed from inventory.')
+
+paste('There are', dim(positive_adjust)[1], 'logs with positive adjustments.') 
+paste('A total of', sum(positive_adjust), 'pieces have been added' )
+
+paste('This means that we have a net loss of', abs(sum(negative_adjust)) - sum(positive_adjust), 'pieces of fabric')
+```
+
+This also means that of the 414 audit logs with any sort of nonzero adjustment, 72.9% are negative adjustments whilst 27.1% are positive, with inventory losing 2.7 times as much fabric as it gains.
+
