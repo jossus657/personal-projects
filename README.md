@@ -49,6 +49,6 @@ This is a team consultation project done for the Fingerhut retail company as a s
 
 **Contains:**
 
-- code_sample1.rmd
+- 
 
 
