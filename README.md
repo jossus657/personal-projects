@@ -49,6 +49,9 @@ This is a team consultation project done for the Fingerhut retail company as a s
 
 
 **Contains:**
+- audit-logs-eda.Rmd
+- audit-logs-eda.pdf
+- theoretical-lot-audits-assessmentxlsx.xlsx
 
 
 **7. [event-marketing-analysis] Analyzing User Data for Actionable Marketing Insights**
@@ -62,6 +65,5 @@ This is a team consultation project done for the Fingerhut retail company as a s
 
 **Contains:**
 
-- 
 
 
