@@ -45,8 +45,19 @@ This is a team consultation project done for the Fingerhut retail company as a s
 - final-notebook.ipynb
 
 
-**6. [audit-logs-technical-interview] Streamlining Data Log Efficiency using Theoretucal Lot Audits**
+**6. [audit-logs-technical-interview] Streamlining Data Log Efficiency using Theoretical Lot Audits**
 
+
+**Contains:**
+
+
+**7. [event-marketing-analysis] Analyzing User Data for Actionable Marketing Insights**
+
+
+**Contains:**
+
+
+**8. [healthcare-technical-interview] Using Patient Data to Create Visualizations and Draw Conclusions**
 
 
 **Contains:**
