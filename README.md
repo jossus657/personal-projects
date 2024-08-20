@@ -41,6 +41,8 @@ This is a team consultation project done for the Fingerhut retail company as a s
 **Contains:**
 
 - fingerhut-consultation-first-looks.Rmd
+- fingerhut-analysis.ipynb
+- final-notebook.ipynb
 
 
 **6. [audit-logs-technical-interview] Streamlining Data Log Efficiency using Theoretucal Lot Audits**
