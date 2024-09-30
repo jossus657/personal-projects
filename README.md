@@ -47,6 +47,24 @@ This is a team consultation project done for the Fingerhut retail company as a s
 
 **6. [audit-logs-technical-interview] Streamlining Data Log Efficiency using Theoretical Lot Audits**
 
+Project Overview:
+This project involved analyzing a dataset from a fabric inventory system audit. The dataset consisted of information about fabric lots, including their lot numbers, stock pieces, and adjustments made by warehouse and administrative staff. The main objective was to identify unique and duplicate lots, provide insights into the auditing process, and develop tools to enhance future audits.
+
+Key Deliverables:
+
+Data Analysis in R: Conducted exploratory data analysis (EDA) in R to gather key insights such as the total number of unique lots, percentage of lots audited, and total adjustments made.
+Used R Markdown to showcase coding processes and analysis in a well-documented report.
+Excel Spreadsheet Enhancements:
+
+Duplicate Detection: Created tools to automatically flag duplicate lots and duplicate audited lots using conditional formatting and formulas. This helped streamline the audit process by allowing the admin team to quickly identify records that had already been audited.
+
+Data Validation: Implemented a validation tool that prevents the entry of duplicate Lot#s, reducing data entry errors and improving system accuracy.
+
+Dynamic Dashboard: Developed a fully automated dashboard that updates dynamically as new data is added, offering key insights into the project’s progress. This dashboard features visuals showing current audit completion status and a project board that lists missing audit logs and automatically updates as audits are completed.
+
+Assumptions and Recommendations: Highlighted assumptions made regarding missing values and standards for complete audits, which were discussed in the R Markdown file for further review.
+This project demonstrated a blend of programming expertise in R for data analysis, alongside Excel’s functionality for practical data management and reporting, ensuring a more efficient auditing process for future inventory reviews.
+
 
 **Contains:**
 - audit-logs-eda.Rmd
