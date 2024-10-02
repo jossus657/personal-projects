@@ -1,0 +1,467 @@
+---
+title: "Assessing Event Engagement and Platform Trends with Statistical Analysis"
+author: "Joshua Susanto"
+output: pdf_document
+date: "2024-06-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Prompt
+
+The overall goal is to identify the sign-up rate patterns for different events, analyze the data from various perspectives, and derive insights to guide business and marketing strategies.
+
+The final deliverable will be a comprehensive analysis report outlining the entire data analysis process. This includes key steps such as data inspection and cleaning, code implementation and logic for analysis, statistical analysis and data visualization, and a clear presentation of the derived insights and conclusions. This report serves as a showcase of my data analysis skills
+and capabilities.
+
+This project uses data of a theoretical event planning platform. This information can be used to draw a wide array of marketing-based insights.
+
+Here are the terminologies used in this document:
+- Event: The event that is hosted on the platform
+- Attendee: People who attend the event
+- User: A user created an account on the platform
+- Sign up rate: Sign up rate of one event = Total number of event attendees signing up on the platform/Total number of event attendees.
+
+### First Looks
+
+I usually like to start my analyses in R for a couple of reasons. I appreciate the neatness of a knitted markdown file and, maybe more importantly, I enjoy doing elementary exploration using the Tidyverse and dplyr. The datasets have been queried using a few simple SQL commands using SQLite. 
+
+We'll start with importing the necessary packages for exploratory analysis and visualization:
+
+```{r}
+# import packages
+library(tidyverse)
+library(gridExtra)
+```
+
+
+```{r}
+# read files
+user <- read_csv('user.csv', col_names = TRUE)
+event <- read_csv('event.csv', col_names = TRUE)
+```
+
+I like to start by looking at some structures and metadata, making sure everything is in order before we start looking at variables more closely.
+
+```{r}
+# observe data structure
+str(user)
+
+# user_id should be changed to a factor to reflect the categorical behavior of the variable
+user$user_id <- as.factor(user$user_id)
+```
+
+
+```{r}
+# observing missing values in our data
+sapply(user, function(x) sum(is.na(x)))
+sapply(event, function(x) sum(is.na(x)))
+
+# observing uniqueness in our variablse
+user %>% 
+  summarise_all(~ n_distinct(., na.rm = TRUE))
+event %>%
+  summarise_all(~ n_distinct(., na.rm = TRUE))
+```
+
+Just from these first looks we can see that this data is relatively simple and clean in terms of missing values and structure. This tells me we can move on to exploring these variables more closely without worrying too much about things going messy. We'll start by looking at the `event` dataset more in-depth:
+
+One thing I do want to do with this specific dataset is add an `event_length` variable as it can lead to some valuable information. This can be done rather simply using the `difftime()` function. Additionally, as our main objective is analyzing sign-up rate we can define a column as such by dividing `sign_ups` with `size`.
+
+In terms of the `user` dataset, the main importance is the platform of each user. However sign-up rates are unique per event while platform is unique to each user. This poses an issue if we would like to consider platform as a category in any of our statistical analyses as this is embedded within a unique event.
+
+To circumvent this we can adapt the user platform in two different ways:
+
+1. A proportion of `mobile` users
+2. A categorical variable (`biggest_platform`) that's the most frequent platform of any said event
+
+```{r}
+# mutating new column: event_length
+event <- event %>%
+  mutate(event_length = difftime(end_date, start_date, units = "hours")) 
+
+event %>% select(event_length) %>% head()
+```
+
+```{r}
+# calculate sign-up rate
+event <- event %>%
+  mutate(sign_up_rate = sign_ups / size)
+
+# in order to account for potential division by 0
+event[event$size == 0,]$sign_up_rate <- 0
+event %>% select(sign_up_rate) %>% head()
+```
+
+```{r}
+# merge data
+user_event <- merge(user, event, by = "event_id")
+
+# encoding mobile as '1', web as '0'
+user_event <- user_event %>%
+  mutate(platform_encoded = if_else(platform == "mobile", 1, 0)) 
+
+# calculate the average encoded platform for each event_id
+encoded_average <- user_event %>%
+  group_by(event_id) %>%
+  summarize(avg_platform = mean(platform_encoded))
+
+# add the platform average as a column
+event <- merge(event, encoded_average, by = "event_id")
+
+# add the encoded average as "mobile" or "web"
+event <- event %>%
+  mutate(platform_majority = if_else(avg_platform >= 0.5, "mobile", "web"))
+
+head(event)
+```
+
+We now have a singular comprehensive dataset with all of the information needed to proceed!
+
+## Exploratory Analysis
+
+Now that we've mutated and calibrated our data as necessary we can start looking into these variables a bit closer. Immediately, the first thing I want to check is the distribution of sign up rates as this is our target variable.
+
+```{r}
+# visualize distribution
+hist(event$sign_up_rate, breaks = 20,
+     probability = TRUE,
+     main  = 'Histogram of Sign-up Rates',
+     xlab = 'Sign-up Rates',
+     ylab = 'Density of Sign-up Rates',
+     col = 'light blue')
+abline(v = mean(event$sign_up_rate), col='red', lwd = 3)
+lines(density(event$sign_up_rate), col = 'green', lwd = 3)
+
+```
+
+We can see that this distribution is quite spread out and skewed with a large peak around a rate of 0.9 and a small one around 0.5. Nothing much of note so far, but it's nice to know that our distribution of rates is somewhat unimodal.
+
+The next variable that catches the eye is the type of event. **Perhaps there's some sort of relationship between event type and the sign up rate? **
+
+```{r}
+# table of values for event type
+event %>%
+  group_by(type) %>%
+  count()
+
+user %>% 
+  group_by(platform) %>%
+  count()
+
+# grouping by type, what is the average size, sign-up total, event length, and sign-up rate?
+event %>%
+  group_by(type) %>%
+  summarize(mean(size))
+
+event %>%
+  group_by(type) %>%
+  summarize(mean(sign_ups))
+
+event %>%
+  group_by(type) %>%
+  summarize(mean(event_length))
+
+event %>%
+  group_by(type) %>%
+  summarize(mean(sign_up_rate))
+```
+
+Looking at these tables we can see that hybrid events are by far the least popular, yielding on;y 11% of the total events, with in-person events being the front runner with 53% of total events. In terms of average size, we see that our virtual options, being hybrid and virtual, have much more capacity. This makes sense as virtual options have no sort of venue capacity restrictions. Event length seems to be similar across all three types of events, nothing groundbreaking here. In terms of sign up rates, we actually find that hybrid has the highest average sign up rate, followed closely behind by virtual. We see that in-person events have a slight drop off.
+
+
+This is an interesting observation to keep in mind. It seems as though perhaps providing the option of both an in-person and virtual attendance can help bring the 'best of both worlds' and be an indicator of our metric of success. We'll explore this relationship in depth in our subsequent analyses.
+
+
+Another way we can gain some perspective is by looking at the empirical distributions of these variables. In doing so we can also see spread and variation in values, which can tell give us more insights on top of just calculating the average.
+
+```{r}
+# visualizing the distributions of interest separated by event type
+size_plot <- ggplot(event, aes(x = size, fill = type)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 60) +
+  labs(title = "Histogram of Event Size by Event Type",
+       x = "Value",
+       y = "Count",
+       fill = "Event Type") + 
+  theme(text = element_text(size = 6)) + 
+  labs(colour = "Type")
+
+signup_plot <- ggplot(event, aes(x = sign_ups, fill = type)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 60) +
+  labs(title = "Histogram of Event Sign-ups by Event Type",
+       x = "Value",
+       y = "Count",
+       fill = "Event Type") + 
+  theme(text = element_text(size = 6))+ 
+  labs(colour = "Type")
+
+
+length_plot <- ggplot(event, aes(x = event_length, fill = type)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Counts of Event Length by Event Type",
+       x = "Event Length",
+       y = "Count",
+       fill = "Event Type") + 
+  theme(text = element_text(size = 6))+ 
+  labs(colour = "Type" )
+
+
+rate_plot <- ggplot(event, aes(x = sign_up_rate, fill = type)) +
+  geom_histogram(position = "identity", alpha = 0.5, bins = 60) +
+  labs(title = "Histogram of Event Sign-up Rates by Event Type",
+       x = "Value",
+       y = "Count",
+       fill = "Event Type") + 
+  theme(text = element_text(size = 6))+ 
+  labs(colour = "Type")
+
+grid.arrange(size_plot, signup_plot, length_plot, rate_plot, nrow = 2)
+```
+
+We can draw a number of observations from looking at these distributions.
+
+1. In the case of Size and sign-up totals, distributions between types run fairly consistent. We know this is the case with their averages as well. This implies that **event type has no effect on size or sign up totals.**
+
+2. In terms of event length, we do see some differences in center and spread between our three event types. With in-person events having the least variation in length and virtual having the most. This could potentially mean that **online options provide the flexibility and capacity for events to run longer.**
+
+3. We see a similar case to observation 1 with regards to sign-up rate, though with noticeably more differences in variation. It's worth nothing that hybrid events are the fewest frequent by far, leading to perhaps a lack of usable data needed to more accurately compare it to in person and virtual events. However this slight difference in distributions is enough to consider that **perhaps we can find a statistically significant difference in event types for sign-up rates.**
+
+
+## Digging Deeper: Statistical Analyses
+
+There are a couple of things we can look into more after our initial exploration. A concern that was raised was whether or not there was a significant difference in event type in terms of sign-up rate. We can explore this relationship even further using a **two-sample t-test**
+
+### Student's t-test
+
+A t-test is a statistical test that can be used to evaluate whether one or two groups have a significant difference to each other. In our case, we can use this test to see whether or not virtual or in-person events have a significant difference in their sign-up rates. 
+*(Note: t-tests and CLT are assumed valid for proportions/averages, we proceed assuming that sign-ups are a proportion of total size or capacity)*
+
+
+As just described, a t-test can at most compare two groups. So you may be wondering: how about the third type of event? Well, in order for a t-test to be effective a couple of assumptions need to be met:
+
+1. The data is continuous, which is met by our numeric sign-up rates
+2. The data is randomly sampled, which I assume is the case for this assessment
+3. The variability in each group is somewhat similar, which can be seen from our distribution visualization above
+4. The distributions are approximately normal
+
+For the fourth assumption, we cite the **Central Limit Theorem** as a means of normality. This theorem states that a sample distribution is approximately normal as sample sizes gets larger. It requires **independence** of our values as well as **sufficiently large sample sizes**. As a general rule of thumb around 10% of the sample size is required for this condition to hold. As per our table above, we know that hybrid options just barely pass this benchmark whereas in-person and virtual events greatly exceed it. A larger sample size will yield much stronger and reliable conclusions due to the law of large numbers, therefore we will proceed with this test examining the difference between in-person and virtual events.
+
+
+As with any statistical test we need a null and alternate hypothesis:
+
+We denote $\mu_{ip}$ as the mean of in-person sign-up rates and $\mu_v$ as the mean of virtual sign-up rates.
+
+$$H_0: \mu_{ip} = \mu_v$$
+
+$$H_1: \mu_{ip} \neq \mu_v$$
+
+Our test states:
+
+```{r}
+# subset data for in-person and virtual events
+in_person <- subset(event, type == "in_person")
+virtual <- subset(event, type == "virtual")
+
+# perform t-test
+t.test(in_person$sign_up_rate, virtual$sign_up_rate)
+```
+
+Alright, how are these results interpreted? Well, it depends on what confidence level we choose. Typically, standard practice is to set a confidence level $\alpha = 0.05$, meaning if our `p-value` falls under this threshold we can say that there is a statistical difference in the sign-up rates between in-person and virtual events. Our p-value is 0.15, which doesn't quite meet this threshold but is certainly close. This means that depending on how flexible we want to get, say if we're okay settling with 85% confidence, that these findings could be statistically significant. 
+
+
+Ignoring all of this technical jargon the main idea is that there still definitely could be a significant difference in these event types, and depending on how confident we want our test to be, there could be statistical evidence to back up this conclusion.
+
+
+We can apply this same test to platform majority, and try to see whether or not we can determine a statistically significant difference in different platform rates.
+
+```{r}
+# subset data for in-person and virtual events
+mobile <- subset(event, platform_majority == "mobile")
+web <- subset(event, platform_majority == "web")
+
+# perform t-test
+t.test(mobile$sign_up_rate, web$sign_up_rate)
+```
+
+With a relatively high p-value of 0.2619 we fail to reject the null hypothesis and determine that there is not statistical evidence to say that platform majority impacts sign-up rates.
+
+###  Average Platform v. Sign-up Rates
+
+Since our platform average has been encoded as a continuous number, we can visualize the relationship between average platform and sign-up rates using a scatterplot
+
+```{r}
+# visualizing avg platform v sign-up rates
+ggplot(event, aes(x = avg_platform, y = sign_up_rate)) +
+  geom_point(size = 1) + 
+  geom_smooth(method = "lm", se = FALSE, linetype = "dashed", size = 1) +
+  labs(title = "Scatterplot of Average Platform and Sign-Up Rate",
+       x = "Average Platform (0 = Web, 1 = Mobile)", y = "Sign-Up Rate") +
+  theme_minimal() 
+
+# fit linear model and provide diagnostics
+lm_model <- lm(sign_up_rate ~ avg_platform, data = event)
+summary(lm_model)
+```
+
+We've started with a standard linear regression fit on our scatter plot. It seems as though the data is quite sporadic and has little to no correlation (at least linear correlation). our linear model summary has an atrociously low $R^2$ value, meaning almost none of the variation in our sign-up rates can be explained by our platform average. All in all, this shows that there is nearly no correlation between these two variables. Given we only tried a linear fit, but just looking at the scatter plot there doesn't seem to be much of a relationship at all.
+
+### Time Series Analysis
+
+One thing that we could potentially dig deeper into is the dates of these events. It's never a bad idea to conduct a time series analysis in order to see temporal trends in data. Since many events can take place on the same day one way to circumvent a messy looking time series line graph is to aggregate by the daily average.
+
+```{r}
+# aggregate average daily sign-up rate 
+event_aggregated <- event %>%
+  group_by(start_date, type) %>%
+  summarize(mean_sign_up_rate = mean(sign_up_rate)) 
+
+# check dataframe
+head(event_aggregated)
+
+# plot sign-up rate over time
+ggplot(event_aggregated, aes(x = start_date, y = mean_sign_up_rate)) +
+  geom_line(size = 0.5) + 
+  labs(title = "Average Sign-Up Rates Over Time",
+       x = "Date", y = "Average Sign-Up Rate") +
+  theme_minimal() + 
+  theme(text = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(hjust = 1) 
+  )
+```
+
+It seems as though there is a large gap in any event activity between 2020 and 2022. Hence we will proceed by subsetting our dataset between these two years and analyze from there:
+
+```{r}
+# subset our data: before and after COVID stoppage
+event2020 <- subset(event_aggregated, format(as.Date(start_date),"%Y")==2020)
+head(event2020)
+
+event2022 <- subset(event_aggregated, format(as.Date(start_date),"%Y")==2022)
+head(event2022)
+```
+
+Now that we have our data ready to model, we can proceed with our time series analysis and even apply event type as a category. This will help us see if different types of events affects sign-up patterns.
+
+```{r}
+p1 <- ggplot(event2020, aes(x = start_date, y = mean_sign_up_rate)) +
+  geom_line(size = 0.7) + 
+  geom_point(size = 1.5) +
+  labs(title = "Average Sign-Up Rates Over Time for 2020",
+       x = "Date", y = "Average Sign-Up Rate") +
+  theme_minimal() + 
+  theme(text = element_text(size = 6),
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(hjust = 1) 
+  )
+
+p2 <- ggplot(event2022, aes(x = start_date, y = mean_sign_up_rate)) +
+  geom_line(size = 0.7) + 
+  geom_point(size = 1.5) +
+  labs(title = "Average Sign-Up Rates Over Time for 2022",
+       x = "Date", y = "Average Sign-Up Rate") +
+  theme_minimal() + 
+  theme(text = element_text(size = 6),
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(hjust = 1) 
+  )
+
+p3 <- ggplot(event2020, aes(x = start_date, y = mean_sign_up_rate, color = type)) +
+  geom_line(size = 0.7) +
+  geom_point(size = 1.5) +  
+  scale_color_manual(values = c("in_person" = "green", "virtual" = "blue", "hybrid" = "red")) + 
+  labs(title = "Average Sign-Up Rates Over Time by Event Type for 2020",
+       x = "Date", y = "Average Sign-Up Rate", color = "Event Type") +
+  theme_minimal() +
+  theme(text = element_text(size = 6),
+    plot.title = element_text(hjust = 0.5), 
+    axis.text.x = element_text(hjust = 1)
+  )
+
+p4 <- ggplot(event2022, aes(x = start_date, y = mean_sign_up_rate, color = type)) +
+  geom_line(size = 0.7) +
+  geom_point(size = 1.5) +  
+  scale_color_manual(values = c("in_person" = "green", "virtual" = "blue", "hybrid" = "red")) + 
+  labs(title = "Average Sign-Up Rates Over Time by Event Type for 2022",
+       x = "Date", y = "Average Sign-Up Rate", color = "Event Type") +
+  theme_minimal() +
+  theme(text = element_text(size = 6),
+    plot.title = element_text(hjust = 0.5), 
+    axis.text.x = element_text(hjust = 1)
+  )
+
+
+grid.arrange(p1,p2,p3,p4, nrow = 2)
+```
+
+There are some interesting things to point out here:
+
+1. It seems as though the only in-person events were done before 2022, and we see much more data points after this shift. This could mean that providing alternative means of event-hosting yields higher event totals, most likely due to the accessibility that virtual/hybrid options provide.
+2. On average, it does seem as though sign-up rates are increasing as time goes on. 2020 saw a very strong start followed by a dramatic drop off, and 2022 saw a recovery from this drop off into consistently higher peaks. 
+3. The major negative factor in 2022's high performance seems to be in-person events. We see that the green line has the consistently lower valleys and is most likely bringing that average down significantly. Hybrid and virtual events seem to perform similarly. Our time series seems to indicate that in the long run, hybrid options may be a stronger pick.
+4. Sign-up rates in general are slowly stabilizing in 2022. We see this as a general trend but especially so with virtual/hybrid options. As time goes on our variance in sign-up rates become less fluctuating. This not only supports our observation above, but also means the company is going in the right direction as of recently.
+
+Now, why not do the same with platforms as well? Let's take a look:
+
+```{r}
+# same process as last chunk, only now with platform majority instead of event type
+event_aggregated_platform <- event %>%
+  group_by(start_date, platform_majority) %>%
+  summarize(mean_sign_up_rate = mean(sign_up_rate)) 
+
+event2020_pf <- subset(event_aggregated_platform, format(as.Date(start_date),"%Y")==2020)
+head(event2020)
+
+event2022_pf <- subset(event_aggregated_platform, format(as.Date(start_date),"%Y")==2022)
+head(event2022)
+
+p5 <- ggplot(event2020_pf, aes(x = start_date, y = mean_sign_up_rate, color = platform_majority)) +
+  geom_line(size = 0.7) +
+  geom_point(size = 1.5) +  
+  scale_color_manual(values = c("mobile" = "purple", "web" = "light blue")) + 
+  labs(title = "Average Sign-Up Rates Over Time by Event Type for 2020",
+       x = "Date", y = "Average Sign-Up Rate", color = "Event Type") +
+  theme_minimal() +
+  theme(text = element_text(size = 6),
+    plot.title = element_text(hjust = 0.5), 
+    axis.text.x = element_text(hjust = 1)
+  )
+
+p6 <- ggplot(event2022_pf, aes(x = start_date, y = mean_sign_up_rate, color = platform_majority)) +
+  geom_line(size = 0.7) +
+  geom_point(size = 1.5) +  
+  scale_color_manual(values = c("mobile" = "purple", "web" = "light blue")) + 
+  labs(title = "Average Sign-Up Rates Over Time by Event Type for 2022",
+       x = "Date", y = "Average Sign-Up Rate", color = "Event Type") +
+  theme_minimal() +
+  theme(text = element_text(size = 6),
+    plot.title = element_text(hjust = 0.5), 
+    axis.text.x = element_text(hjust = 1)
+  )
+
+grid.arrange(p5,p6, nrow = 2)
+```
+
+A couple of observations:
+
+1. It seems as though the web sign-ups were implemented post-covid as well. 
+2. Web sign-ups appear to be more consistent in terms of variance as well as have higher peaks and lower valleys than mobile sign-ups. This indicates as successful shift in platforms, though I believe that mobile platforms are still good for accessibility.
+
+### Discussion and Conclusive Thoughts
+
+Just to synthesize what we covered and went over, we started off by observing the summary statistics and distributions of our variables of interest. In general, sign up rates seem to be making an improvement over time, with averages becoming higher and more consistent. In terms of event length, there doesn't seem to be a strong correlation in an event's length with the event's sign-up rate.
+
+Looking at platform we see a couple of interesting things. Considering platform as a category, we find that there is some statistical evidence to say that different platforms yield different sign-up rates, but not enough to make a solid conclusion. However looking at a time series analysis we actually find that platform variation seems to be becoming more consistent, although web outperforms mobile slightly. From this I'd say both are strong platforms and should be kept to provide as much accessibility and variety for users. Looking at platforms as a numeric variable, we see absolutely no correlation between the two variables. Perhaps it may be worth using a marginal model plot to see what kind of fit would work best for this data.
+
+A strong emphasis was placed on the relationship between event type and their sign-up rates. Initially, we saw that, on average, virtual/hybrid options seem to be a stronger metric of success than in-person events. Looking from a different perspective saw that there seemed to be some difference in center and spread between event types' sign-up rated. Digging deeper into this observation, we used a students t-test we were able to see that there is much evidence to support the notion that virtual events are actually stronger; however, this evidence is not enough for a 95% confidence interval. Though I'd say this is a clear indicator that providing hybrid/virtual options allows for the 1) capacity and 2) accessibility to improve sign-up rates. 
+
+We already looked at statistical significance holistically, but looking at trends over time yields some more interesting observations. It's clear that 2022 saw strong strides in sign-up rates, with strong consistency. But, the return from a long global pandemic caused some clear setbacks. As 2022 rolled around we actually saw a return to normalcy, if anything we saw improvements! Reaching highs in sign-up rates, with strong peaks, more event totals, and (in some cases) more consistency. We actually saw that the fluctuations in 2022 sign-up rates primarily came from in-person events. However, we see that fluctuation even out over time. I believe this is primarily due to the addition of virtual/hybrid events introduced in 2022. With their addition we see even more events taking place than 2020 as well as more consistency and stronger rates. It all reemphasizes the notion that providing these alternatives is a net positive, as it also alleviates the strains that comes with putting on in-person events. I'd definitely recommend advertising or marketing towards more hybrid or virtual options and events. I understand that nothing beats the in-person experience, but taking on more events that benefit or need online options would allow for the capacity to host even stronger in-person events as well as boost sign-up rates and consistency.
+
+If provided more time I believe I could create an algorithm that can predict sign-up rates. I also believe that a clustering machine learning algorithm would benefit for this data; however, the data is a bit sparse for things like machine learning so it was ultimately scrapped from my outline. Future studies would also benefit from different statistical tests. A student's t-test was effectively used thanks to the structure of our data and the fact that we're only considering 2 categories in most cases. However, event length can be considered as a multi-leveled factor; hence, different designs (ie. Blocked or Factorial Statistical Experiments) can be used in subsequent analyses.
+
+Thank you for this opportunity to showcase my code, writing, and data analysis skills! This was a fun project and I greatly enjoyed the process. For any questions or clarification feel free to reach out to:
+
+joshuasusanto02@gmail.com
+(626)322-8627
