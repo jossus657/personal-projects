@@ -1,0 +1,477 @@
+---
+title: "Healthcare Patient Data Analysis"
+author: "Joshua Susanto"
+output: pdf_document
+date: "2024-08-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# import packages
+library(tidyverse)
+library(lubridate)
+```
+
+### Background
+
+The dataset of interest contains mock patient data to simulate the kind of work that will be expected at a oral surgery clinic. The data includes patient demographics (age, sex, location, etc.), medical information (medical problem, surgeries needed, surgeries done, etc.) To simulate the real data environment, much of the data fields may be blank, incomplete or with errors. 
+
+As I analyze the data, I'll be making note of all assumptions or changes I made to the data in order to make it usable.
+
+**Files provided:**
+
+data_1: patient background data
+
+data_2: patient surgery data
+
+
+```{r}
+# read data sets, view first few rows
+data_1 <- readxl::read_excel("data_1.xlsx")
+head(data_1)
+
+data_2 <- readxl::read_excel("data_2.xlsx")
+head(data_2)
+```
+
+
+### Tasks and Data Cleaning
+
+1. Firstly I'd like to combine `data_1` and `data_2` using variable `scrn_UID1`
+
+The same patients are in `data_1` & `data_2`. `data_2` has a subset of the patients in `data_1`.
+
+I'll name the new file `data_combined`
+
+```{r}
+data_combined <- data_1 %>%
+  left_join(data_2, by = "scrn_UID1")
+
+head(data_combined)
+```
+
+Due to the nature of the patients in data_2 being a subset of the patients in data_1, we can use a left_join to ensure that all patients in data_1 are accounted for.
+
+2. Data Cleaning - Missing Values
+
+I like to start my data cleaning/inspection by looking at the structure of our data set:
+
+```{r}
+# view data structure, will not be shown in the knitted PDF due to length
+# str(data_combined)
+```
+
+We can see that we have a lot of variables and quite a few error handling tasks ahead of us. Upon inspection, other than just being a missing value, there can be "BLANKS" or some sort of "ERROR" as a value instead. In order to try and remedy as many potential missing values as possible without going through every single element to confirm we can quickly view the unique values of our variables
+
+
+```{r}
+# find the unique values for each column
+unique_values <- lapply(data_combined, unique)
+
+# print the unique values for each column
+head(unique_values)
+```
+
+
+Although it would be extremely time consuming to check in depth all of our unique values, just using quick inspections we can see that most (if not all) missing values are 
+
+1. Already NA
+2. "BLANK"
+3. "ERROR"
+4. "#REF!" 
+5. "*"
+
+I think it's safe to assume that this list covers any relevant error handling and missing values to consider. For future automation reference, something like a large language model could be used to figure accurately predict which values are missing within the context of the dataset. A more thorough data dictionary that discusses all of these variable can also be used to create regular expression filters/data manipulation tools for widespread validation.
+
+```{r}
+# Replace all empty cells with "not read"
+data_combined[is.na(data_combined)] <- "not read"
+
+# Replace values that start with "ERROR", are "BLANK", or are "#REF!" with "not read"
+data_combined <- data_combined %>%
+  mutate(across(everything(), ~ ifelse(grepl("^ERROR", .) | . == "BLANK" | . == "#REF!", "not read", .)))
+
+
+head(data_combined)
+```
+
+An asterisk as noted appears in some places that doesn't seem to belong. However, I'm not exactly sure if this is an error or missing value or something else. Hence, I'll make the assumption that they are not harmful to keep in our data, but they can easily be removed as necessary.
+
+3. BMI Calculation
+
+For this cleaning step, we're further validating our data by removing any extreme outliers (in this case the assumption that any BMI outside the range of 10 and 50 are virtually impossible and hence can be considered removable errors.)
+
+```{r}
+# BMI conversion and calculation
+data_combined <- data_combined %>%
+  mutate(scrn_height_m = as.numeric(scrn_height_cm)/100,
+         BMI = as.numeric(scrn_weight_kg)/(scrn_height_m ^ 2))
+
+# replacing values that are out of our desired range
+data_combined <- data_combined %>%
+  mutate(scrn_weight_kg = ifelse(BMI > 50 | BMI < 10, "error", scrn_weight_kg),
+         scrn_height_cm = ifelse(BMI > 50 | BMI < 10, "error", scrn_height_cm))
+
+
+data_combined <- data_combined %>%
+  mutate(BMI = as.character(BMI),
+         scrn_height_m = as.character(scrn_height_m)) 
+
+# for missing values introduced by coercion and conversion calculations
+data_combined[is.na(data_combined)] <- "not read"
+
+
+data_combined %>%
+  select(scrn_height_cm, scrn_weight_kg, BMI) %>%
+  head(20)
+```
+
+*Note: The missing BMI values introduced by any "not read" height or weight values have also been defaulter to be "not read" due to its nature not necessarily being an outer range error.*
+
+
+4. Data Cleaning - `scrn_UID1`
+
+
+```{r}
+# make sure scrn_UID1 has exactly 14 characters, keep first 14
+data_combined <- data_combined %>%
+  mutate(UID_clean = substr(scrn_UID1, 1, 14))
+
+data_combined$UID_clean
+```
+
+5. Operation Types
+
+Firstly, I want to make sure that the operation types provided are the same as what we'll be seeing in our dataset.
+
+```{r}
+unique(data_combined$or_operation_performed)
+```
+
+Surprisingly enough, it seems as though there are only 2 different operations outlined within this variable. In this case, we can have two different cases for simplification: simply checking whether or not a value has the term "lip" or "palate" and responding accordingly.
+
+In the case where the data is diverse as the example given, this code could be easily adjusted using the `%in%` operator and providing a list of specified lip and palate operations.
+
+Ideally, all other cases will be simply marked as "Other", however the other cases in this specific dataset are examples of missing data, not necessarily values where we know what operation type. Hence, I'm using this assumption to omit that final argument and leave the remaining data as "not read."
+
+```{r}
+# recategorizing operations based on whether they contain "lip" or "palate"
+data_combined <- data_combined %>%
+  mutate(or_operation_performed_simplified = case_when(
+    grepl("lip", or_operation_performed, ignore.case = TRUE) ~ "Lip",
+    grepl("palate", or_operation_performed, ignore.case = TRUE) ~ "Palate",
+    TRUE ~ or_operation_performed))
+
+
+data_combined$or_operation_performed_simplified
+
+
+# alternate code option for future scenarios in which an 'other' option is necessary 
+
+#data_combined <- data_combined %>%
+#  mutate(or_operation_performed_simplified = case_when(
+#    grepl("lip", or_operation_performed, ignore.case = TRUE) ~ "Lip",
+#    grepl("palate", or_operation_performed, ignore.case = TRUE) ~ "Palate",
+#    grepl("not read", or_operation_performed, ignore.case = TRUE) ~ "not read",
+#    TRUE ~ "other"))
+
+```
+
+
+### Data Visualization 1
+
+Before starting our first visualization I want to more closely inspect the variables we will be working with:
+
+```{r}
+# view patient DOB
+data_combined$scrn_patient_dob_dmy
+
+# seeing how many total missing birthdays
+sum(data_combined$scrn_patient_dob_dmy == "not read")
+
+# viewing logged dates
+data_combined$scrn_todays_date
+```
+
+It seems as though there are quite a few missing variables in our patient DOB, including many incomprehensible input errors. 
+
+However, in the `scrn_todays_date` variable it seems as though this specific dataset has been all recorded on the same date, being May 3rd 2023. Using this we can actually remove any missing values and also correct any data input errors for this column by simply having a constant date. This would help retain as much information as possible, especially because we need to perform datetime calculations, which can introduce NAs by coercion. 
+
+```{r}
+# ensuring all elements of this variable are correct and readable 
+data_combined$scrn_todays_date <- "050323"
+```
+
+Now that we have as many observations as possible in a usable and non missing format, we can convert to datetime and use `difftime()` to find the age of our patients.
+
+```{r}
+# convert DOBs and today's date into datetime objects, find the difference as evaluation age
+data_combined <- data_combined %>%
+  mutate(age_at_evaluation = as.numeric(difftime(dmy(scrn_todays_date), dmy(scrn_patient_dob_dmy), units = "days"))/365.25)
+
+# recheck: missing values after conversion and calculation
+sum(is.na(data_combined$age_at_evaluation))
+```
+
+It seems as though many user DOBs were unreadable and could not be converted. Ideally we would try to retain information and try to adapt the dates into a readable form but most, if not all, are incomprehensible in terms of discerning a real date.
+
+```{r}
+# creating age groups
+data_combined <- data_combined %>%
+  mutate(age_group = cut(age_at_evaluation, breaks = c(0, 0.5, 1, 2, 3,
+                                                  4, 5, 6, 7, 8,
+                                                  9, 10, 20, Inf), 
+                         labels = c("0 - 6 months", 
+                                    "6 months - 1 year", 
+                                    "1 - 2 years", 
+                                    "2 - 3 years",
+                                    "3 - 4 years",
+                                    "4 - 5 years",
+                                    "5 - 6 years",
+                                    "6 - 7 years",
+                                    "7 - 8 years",
+                                    "8 - 9 years",
+                                    "9 - 10 years",
+                                    "10 - 20 years",
+                                    "20+ years")))
+
+
+# removing unknown ages, can be included optionally
+data_combined_graph <- data_combined %>%
+  filter(!is.na(age_at_evaluation) & scrn_gender != 'not read')  
+```
+
+Now that we have our data and manipulation sorted we could start our first visualization, creating an inverted multi-category bar chart:
+
+```{r}
+# split by gender in order to invert male observations
+data_male <- data_combined_graph %>%
+  filter(scrn_gender == "Male") %>%
+  group_by(age_group) %>%
+  summarise(count = n()) %>%
+  mutate(count = -count) # inversion
+
+data_female <- data_combined_graph %>%
+  filter(scrn_gender == "Female") %>%
+  group_by(age_group) %>%
+  summarise(count = n())
+
+# recombine our tables into a new dataset for plotting
+gender_visual_data <- bind_rows(
+  data_male %>% mutate(scrn_gender = "Male"),
+  data_female %>% mutate(scrn_gender = "Female")
+)
+
+# visualization code
+ggplot(gender_visual_data, aes(x = age_group, y = count, fill = scrn_gender)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = abs(count)), # must use absolute value for our labels
+            position = position_stack(vjust = 0.5), # using centered data labels
+            size = 3) +
+  labs(title = "Age Distribution of Patients by Gender",
+       x = "Age Group",
+       y = "Number of Patients",
+       fill = "Gender") +
+  scale_y_continuous(labels = abs) +  
+  scale_fill_manual(values = c("Male" = "lightblue", "Female" = "lightpink")) +
+  theme_minimal() +
+  coord_flip()
+```
+
+Now we can see the distribution of our patients' age groups by their gender! Unfortunately not all groups are represented due to the sparsity and errors within the initial datasets. We can see that the distribution of ages is quite similar between male and female patients, with similar center and spread. Conclusions can be more concretely reached with much more observations.
+
+### Data Visualization 2
+
+```{r}
+# create a new data frame, tabled values of recommended follow ups
+follow_up_table <- data.frame(table(data_combined$scrn_recommended_follow_up))
+follow_up_table <- follow_up_table %>% filter(Var1 != "not read")
+follow_up_table
+```
+
+Now that we have this table, we can create a code script that will 
+
+1. Find which follow up options contain multiple events
+2. Split these options and add a count to any existing follow up variable
+3. If a new variable is within this option, create a new follow up variable
+
+A more in depth explanation can be provided, but this code script has been generalized for use in any case in the future! (Considers cases with more than 2 options)
+
+```{r}
+# code script for follow up recommendations, will return a table with only 
+# singular follow up events and proper counts
+remove_index <- c()
+for (i in 1:(length(follow_up_table$Var1))) {
+  temp <- as.character(follow_up_table$Var1[i])
+  if (substr(temp,1,1) == '(') {
+    multi_recs <- strsplit(gsub("[()]", "", temp), ",")
+    multi_recs <- unlist(multi_recs)
+    for (j in 1:(length(multi_recs))) {
+      if (multi_recs[j] %in% follow_up_table$Var1) {
+        follow_up_table$Freq[follow_up_table$Var1 == multi_recs[j]] <-
+        follow_up_table$Freq[follow_up_table$Var1 == multi_recs[j]] + 1
+      } else {
+        new_row <- data.frame(Var1 = multi_recs[j], Freq = 1)
+        follow_up_table <- rbind(follow_up_table, new_row)
+      }
+    }
+    remove_index <- append(remove_index, i)
+  }
+}
+follow_up_table <- follow_up_table[-remove_index,]
+
+# view updated table
+follow_up_table
+```
+
+Finally, after this manipulation, we are able to start creating our bar chart of follow up recommendations. We start by refactoring the events by descending order of frequency.
+
+```{r}
+# store follow up recs as a factor based on descending frequency
+follow_up_table$Var1 <- factor(follow_up_table$Var1, 
+                               levels = follow_up_table$Var1[order(-follow_up_table$Freq)])
+
+
+# create the bar plot
+ggplot(follow_up_table, aes(x = Var1, y = Freq)) +
+  geom_bar(stat = "identity", fill = "skyblue") + 
+  labs(title = "Bar Plot of Recommended Follow Ups", x = "Follow Up", y = "Cases") +  
+  theme_minimal() 
+```
+
+From this histogram we see that with our data, the most common event is that there is no follow up recommendation needed. This seems to be the overwhelming majority. This is good, as it means that these operations are being done with very minimal complications! It also seems as though from the small sample of data we have we don't exactly have a diverse set of follow up events available, many only having one instance.
+
+### Data Visualization 3
+
+For our third and final visual we once again will view what sort of data we will be working with
+
+```{r}
+data_combined %>% 
+  select(or_surgery_start_time, or_surgery_end_time, or_operation_performed_simplified)
+```
+
+There seems to be many issues at hand here:
+
+1. These times must be converted as datetime objects, this can be done using `as.POSIX.ct()`
+2. Many times are missing, only being represented with ":"
+3. Many times have missing spaces, (ie, missing the hour, or 1 or more digits in the minute)
+4. Some data was not properly read and have "*" sprinkled in 
+5. These issues are in different spots in both columns
+
+All of these things will prevent us from moving forward. Since times that are simply ":" are genuinely unintelligible, we will consider these missing values and simple omit the observations with this as the start or end time.
+
+Missing spaces can be dealt with by assuming a "0" where there's a missing spot. This may not be entirely accurate, however it's much better than omitting any more observations. Between issues above, "not read" data, and the fact that there isn't much data to begin with we want to retain as much information as possible.
+
+This same assumption will be used for "*" being found in some places. We can simple replace these with 0s as well, fairly maintaining as much information as possible.
+
+This can all be done through the implementation of a function, `format_time()` which can be used with `sapply()` on each column to ensure that any value that comes in can be properly converted as a time object. This function is generalized for future use and can be used moving forward for any following data.
+
+```{r}
+# first step: omit rows with missing information that is too vague to make assumptions for
+visual_subset <- data_combined %>% 
+  select(or_surgery_start_time, or_surgery_end_time, or_operation_performed_simplified) %>%
+  filter((or_surgery_start_time != ":") & (or_surgery_end_time != ":"))
+
+visual_subset <- visual_subset %>%
+  filter(or_surgery_start_time != "not read" | or_surgery_end_time != "not read")
+
+# function implementation
+format_time <- function(x) {
+  # for hours: add "0" before the ":" if there are 0 characters before the colon
+  if (grepl("^:", x)) {
+    x <- paste0("0", x)
+  }
+  
+  # replaces * with 0
+  x <- gsub("\\*", "0", x)
+  
+  # for minutes:  split the string by ":", creates a list of hours and minutes
+  parts <- unlist(strsplit(x, ":"))
+  
+  # if the minutes are missing, replace with "00"
+  if (is.na(parts[2])) {
+    parts[2] <- "00"
+  }
+  
+  # if only 1 minute digit is missing, append with a 0 at the END (not beginning)
+  if (nchar(parts[2]) == 1) {
+    parts[2] <- paste0(parts[2], "0")
+  }
+  
+  # combine the parts back together and return
+  return(paste(parts, collapse = ":"))
+}
+
+# function use: start time and end time
+visual_subset$or_surgery_start_time <- sapply(visual_subset$or_surgery_start_time, format_time)
+
+visual_subset$or_surgery_end_time <- sapply(visual_subset$or_surgery_end_time, format_time)
+
+# final results
+visual_subset
+```
+
+Now that our time data is in proper format for conversion, we can convert the times:
+
+```{r}
+# converting times to datetime objects 
+visual_subset <- visual_subset %>%
+  mutate(or_surgery_start_time = 
+           as.POSIXct(or_surgery_start_time, format = "%H:%M", tz = "UTC"),
+         or_surgery_end_time = 
+           as.POSIXct(or_surgery_end_time, format = "%H:%M", tz = "UTC"))
+  
+# final results
+visual_subset
+```
+
+Finally, we can use `mutate()` again to find the start and end time differences and create a new variable `surgery_time` that describes the surgery length in minutes. We then do something similar to our previous visualization and create breaks in the data for different duration groups.
+
+```{r}
+# creating a new variable as the difference between surgery start and end
+visual_subset <- visual_subset %>%
+  mutate(surgery_time = abs(as.numeric(difftime(or_surgery_end_time, 
+                                                or_surgery_start_time, units = "mins"))))
+
+# create partitions/groups based on surgery duration
+visual_subset <- visual_subset %>%
+  mutate(duration_group = cut(surgery_time, breaks = c(-1, 60, 90, 120, 150,
+                                                  180, Inf), 
+                         labels = c("0 - 1 Hour", 
+                                    "1 - 1.5 Hours", 
+                                    "1.5 - 2 Hours", 
+                                    "2 - 2.5 Hours",
+                                    "2.5 - 3 Hours",
+                                    "3+ Hours")))
+
+# final results
+visual_subset
+```
+
+Now we can proceed with the visualization:
+
+```{r}
+# creating a stacked bar chart of surgery duration by operation performed
+ggplot(visual_subset, aes(x = duration_group, 
+                          fill = or_operation_performed_simplified)) +
+  geom_bar(position = "stack") + 
+  labs(title = "Operation Length and Type",
+       x = "Duration",
+       y = "Cases",
+       fill = "Operation Performed") +
+  scale_fill_manual(values = c("Lip" = "Purple", "Palate" = "Brown", "not read" = "Orange")) +
+  theme_minimal() 
+```
+
+We can see quite diverse results in terms of the duration of our operations. We can also see that lip and palate operations are comparably similar in terms of duration as well. Although, more data is required to come to more confident conclusions I believe that the higher amount of cases that are 3+ hours are likely due to input errors in our data. Potentially, this could also be due to the fact that we only have 30 observations that aren't missing. I decided to keep "not read" or missing operations included because we already are struggling with data size as well as the ambiguity that can also be considered with not knowing whether or not this operation is a lip, palate, or other. In any other circumstance, "not read" would definitely be omitted.
+
+### Final Thoughts and Recommendations
+
+This was a fun and thought-provoking analysis to work on. Thank you for the opportunity to showcase my skills and give my thoughts! Difficulty definitely came with the low number of observations combined with the large amount of missing, incomplete, or incomprehensible data; however, I know that easy data is not what we data scientists should expect! I believe that the assumptions I made and the workarounds that I came up with reflected my commitment to data manipulation and validity and shadowed best practices seen within the industry! A mark of a great analyst is their ability to work through even the messiest of data and to come up with tools, strategies, and solutions. Please reach out for any questions or explanation regarding the strategies and steps I took within this analysis.
+
+In terms of recommendations for future data gathering tools, I would want to implement a wide-spread data validation and error handling system within the surveys and data collection systems of the organization. This would remove much of the missing or incomplete data that we came across. Additionally, I believe that having a pipeline that also does some cleaning/manipulation between collection and sheet creating would be useful. This could be something simple like ensuring that we change data types and format accordingly. This can allow us to save much time doing this by hand and doing this for every new batch of data received. It can also save computational times as we often have to convert data back and forth between integers and factors and date objects. 
+
+Thank you again for reviewing my work!
